@@ -6,7 +6,7 @@ from datetime import datetime
 
 st.set_page_config(layout="wide", page_title="Where's Owen?")
 
-# Professional font styling
+# Clean, professional sans-serif styling
 st.markdown("""
     <style>
         html, body, [class*="css"] {
@@ -19,11 +19,11 @@ st.title("Where's Owen?")
 st.markdown("Real-time tracking of Owen's global engagements, field trials, and upcoming travel.")
 st.markdown("---")
 
-# 1. FILE UPLOADER IN THE SIDEBAR
+# 1. SIDEBAR FILE UPLOADER
 st.sidebar.markdown("### Update Dashboard Data")
 uploaded_file = st.sidebar.file_uploader("Upload a new schedule CSV file", type=["csv"])
 
-# 2. LOAD DATA (Use uploaded file if it exists, otherwise fall back to mock data)
+# 2. DATA PROCESSING (Fallback to mock data if no upload)
 @st.cache_data
 def get_default_data():
     data = [
@@ -39,16 +39,16 @@ if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
         st.sidebar.success("Successfully loaded uploaded CSV data!")
     except Exception as e:
-        st.sidebar.error(f"Error reading file. Falling back to defaults.")
+        st.sidebar.error("Error reading file. Falling back to defaults.")
         df = get_default_data()
 else:
     df = get_default_data()
 
-# Ensure dates are treated properly as timestamps
+# Clean dates
 df['Start Date'] = pd.to_datetime(df['Start Date'])
 df['End Date'] = pd.to_datetime(df['End Date'])
 
-# 3. CHRONOLOGICAL TIMELINE EVALUATION
+# 3. CHRONOLOGICAL CALCULATIONS
 today = datetime.now()
 
 def determine_status(row):
@@ -61,10 +61,57 @@ def determine_status(row):
 
 df['Timeline Status'] = df.apply(determine_status, axis=1)
 
-# 4. MAP DISPLAY PANEL
+
+# ==========================================
+# SECTION 1 (TOP): CHRONOLOGICAL STATUS BOARDS
+# ==========================================
+col_curr, col_up, col_past = st.columns(3)
+
+with col_curr:
+    st.subheader("Right Now")
+    current_trip = df[df['Timeline Status'] == 'Current']
+    if not current_trip.empty:
+        for _, row in current_trip.iterrows():
+            st.error(f"**{row['Event']}**\n\n{row['Location Name']}\n\nEnds {row['End Date'].strftime('%B %d, %Y')}")
+    else:
+        st.write("Owen is currently at the home office.")
+
+with col_up:
+    st.subheader("Coming Up")
+    upcoming_trips = df[df['Timeline Status'] == 'Upcoming'].sort_values('Start Date')
+    if not upcoming_trips.empty:
+        for _, row in upcoming_trips.iterrows():
+            st.markdown(f"**{row['Start Date'].strftime('%b %d')}**: {row['Event']} ({row['Location Name']})")
+    else:
+        st.write("No upcoming travel scheduled.")
+
+with col_past:
+    st.subheader("Past Engagements")
+    past_trips = df[df['Timeline Status'] == 'Past'].sort_values('Start Date', ascending=False)
+    if not past_trips.empty:
+        for _, row in past_trips.iterrows():
+            st.markdown(f"*{row['Start Date'].strftime('%b %Y')}* — {row['Event']}")
+    else:
+        st.write("No historical entries logged.")
+
+
+# ==========================================
+# SECTION 2 (MIDDLE): SCHEDULE REGISTRY LEDGER
+# ==========================================
+st.markdown("---")
+st.subheader("Full Schedule Registry")
+st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+# ==========================================
+# SECTION 3 (BOTTOM): REGIONAL MAP
+# ==========================================
+st.markdown("---")
 st.subheader("Regional Engagements Map")
+
 m = folium.Map(location=[20, 0], zoom_start=2, tiles="CartoDB positron")
 
+# Muted, corporate color configuration
 color_map = {'Current': 'red', 'Upcoming': 'purple', 'Past': 'gray'}
 
 for idx, row in df.iterrows():
@@ -86,39 +133,3 @@ for idx, row in df.iterrows():
     ).add_to(m)
 
 st_folium(m, width="100%", height=450, key="owen_map")
-
-# 5. BREAKOUT CHRONOLOGICAL OVERVIEWS
-st.markdown("---")
-col_curr, col_up, col_past = st.columns(3)
-
-with col_curr:
-    st.subheader("📍 Right Now")
-    current_trip = df[df['Timeline Status'] == 'Current']
-    if not current_trip.empty:
-        for _, row in current_trip.iterrows():
-            st.error(f"**{row['Event']}**\n\n{row['Location Name']}\n\nEnds {row['End Date'].strftime('%B %d, %Y')}")
-    else:
-        st.write("Owen is currently at the home office.")
-
-with col_up:
-    st.subheader("🔮 Coming Up")
-    upcoming_trips = df[df['Timeline Status'] == 'Upcoming'].sort_values('Start Date')
-    if not upcoming_trips.empty:
-        for _, row in upcoming_trips.iterrows():
-            st.markdown(f"**{row['Start Date'].strftime('%b %d')}**: {row['Event']} ({row['Location Name']})")
-    else:
-        st.write("No upcoming travel scheduled.")
-
-with col_past:
-    st.subheader("📜 Past Engagements")
-    past_trips = df[df['Timeline Status'] == 'Past'].sort_values('Start Date', ascending=False)
-    if not past_trips.empty:
-        for _, row in past_trips.iterrows():
-            st.markdown(f"*{row['Start Date'].strftime('%b %Y')}* — {row['Event']}")
-    else:
-        st.write("No historical entries logged.")
-
-# 6. LEDGER DATA REGISTRY
-st.markdown("---")
-st.subheader("Full Schedule Registry")
-st.dataframe(df, use_container_width=True, hide_index=True)
