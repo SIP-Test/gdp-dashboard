@@ -2,76 +2,123 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+from datetime import datetime
 
-# Set page to wide mode to give the map breathing room
-st.set_page_config(layout="wide", page_title="Global Project Dashboard")
+st.set_page_config(layout="wide", page_title="Where's Owen?")
 
-st.title("🗺️ Team Activity Tracker (Prototype)")
-st.caption("A test playground using mock data to track global events.")
+# Professional font styling
+st.markdown("""
+    <style>
+        html, body, [class*="css"] {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-# 1. GENERATE FAKE DATA FOR TESTING
+st.title("Where's Owen?")
+st.markdown("Real-time tracking of Owen's global engagements, field trials, and upcoming travel.")
+st.markdown("---")
+
+# 1. FILE UPLOADER IN THE SIDEBAR
+st.sidebar.markdown("### Update Dashboard Data")
+uploaded_file = st.sidebar.file_uploader("Upload a new schedule CSV file", type=["csv"])
+
+# 2. LOAD DATA (Use uploaded file if it exists, otherwise fall back to mock data)
 @st.cache_data
-def get_mock_data():
-    return pd.DataFrame({
-        'Project Name': ['Project Alpha (Tech Hub)', 'APAC Expansion Kickoff', 'EMEA Logistics Sync', 'LATAM Field Trials'],
-        'Region': ['North America', 'APAC', 'Europe', 'South America'],
-        'Latitude': [37.7749, 1.3521, 48.8566, -23.5505],
-        'Longitude': [-122.4194, 103.8198, 2.3522, -46.6333],
-        'Status': ['Active', 'New', 'Active', 'Pending'],
-        'Start Date': ['2026-08-01', '2026-09-15', '2026-07-20', '2026-11-05'],
-        'Lead': ['Sarah Jenkins', 'Alex Wong', 'Elena Rostova', 'Carlos Silva']
-    })
+def get_default_data():
+    data = [
+        {'Event': 'APAC Expansion Kickoff', 'Location Name': 'Singapore', 'Latitude': 1.3521, 'Longitude': 103.8198, 'Start Date': '2026-06-10', 'End Date': '2026-06-18', 'Type': 'Conference'},
+        {'Event': 'London Tech Roundtable', 'Location Name': 'London, UK', 'Latitude': 51.5074, 'Longitude': -0.1278, 'Start Date': '2026-07-10', 'End Date': '2026-07-22', 'Type': "Owen's Events"},
+        {'Event': 'Municipal Smart Grid Sync', 'Location Name': 'Paris, France', 'Latitude': 48.8566, 'Longitude': 2.3522, 'Start Date': '2026-08-05', 'End Date': '2026-08-12', 'Type': 'Current RFPs'},
+        {'Event': 'LATAM Partner Field Trials', 'Location Name': 'São Paulo, Brazil', 'Latitude': -23.5505, 'Longitude': -46.6333, 'Start Date': '2026-09-15', 'End Date': '2026-09-30', 'Type': 'Current Explorers'}
+    ]
+    return pd.DataFrame(data)
 
-df = get_mock_data()
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)
+        st.sidebar.success("Successfully loaded uploaded CSV data!")
+    except Exception as e:
+        st.sidebar.error(f"Error reading file. Falling back to defaults.")
+        df = get_default_data()
+else:
+    df = get_default_data()
 
-# 2. RENDER THE INTERACTIVE MAP
-st.subheader("Active Regional Events")
+# Ensure dates are treated properly as timestamps
+df['Start Date'] = pd.to_datetime(df['Start Date'])
+df['End Date'] = pd.to_datetime(df['End Date'])
 
-# Initialize map centered on the ocean/equator
-m = folium.Map(location=[15, 0], zoom_start=2, tiles="CartoDB positron")
+# 3. CHRONOLOGICAL TIMELINE EVALUATION
+today = datetime.now()
 
-# Color mapping helper for pins
-status_colors = {'Active': 'green', 'New': 'blue', 'Pending': 'orange'}
+def determine_status(row):
+    if row['End Date'] < today:
+        return 'Past'
+    elif row['Start Date'] <= today <= row['End Date']:
+        return 'Current'
+    else:
+        return 'Upcoming'
 
-# Drop the markers onto the map
+df['Timeline Status'] = df.apply(determine_status, axis=1)
+
+# 4. MAP DISPLAY PANEL
+st.subheader("Regional Engagements Map")
+m = folium.Map(location=[20, 0], zoom_start=2, tiles="CartoDB positron")
+
+color_map = {'Current': 'red', 'Upcoming': 'purple', 'Past': 'gray'}
+
 for idx, row in df.iterrows():
-    popup_text = f"""
-    <div style='width: 200px;'>
-        <h4>{row['Project Name']}</h4>
-        <b>Status:</b> {row['Status']}<br>
-        <b>Start Date:</b> {row['Start Date']}<br>
-        <b>Team Lead:</b> {row['Lead']}
+    status = row['Timeline Status']
+    icon_type = 'star' if status == 'Current' else 'info-sign'
+    
+    popup_html = f"""
+    <div style='font-family: sans-serif; font-size: 13px; line-height: 1.4; width: 200px;'>
+        <b style='color: { "red" if status=="Current" else "#333" }; font-size: 14px;'>[{status}] {row['Event']}</b><br>
+        <b>Where:</b> {row['Location Name']}<br>
+        <b>Dates:</b> {row['Start Date'].strftime('%b %d')} - {row['End Date'].strftime('%b %d, %Y')}
     </div>
     """
+    
     folium.Marker(
         [row['Latitude'], row['Longitude']],
-        popup=popup_text,
-        icon=folium.Icon(color=status_colors.get(row['Status'], 'gray'), icon='info-sign')
+        popup=popup_html,
+        icon=folium.Icon(color=color_map[status], icon=icon_type)
     ).add_to(m)
 
-# Display map in dashboard
-st_folium(m, width="100%", height=450)
+st_folium(m, width="100%", height=450, key="owen_map")
 
-# 3. INTERACTIVE CALENDAR TIMELINE VIEW
+# 5. BREAKOUT CHRONOLOGICAL OVERVIEWS
 st.markdown("---")
-st.subheader("📅 Schedule Overviews")
+col_curr, col_up, col_past = st.columns(3)
 
-# Convert strings to datetime for timeline manipulation
-df['Start Date'] = pd.to_datetime(df['Start Date'])
-sorted_df = df.sort_values(by='Start Date')
+with col_curr:
+    st.subheader("📍 Right Now")
+    current_trip = df[df['Timeline Status'] == 'Current']
+    if not current_trip.empty:
+        for _, row in current_trip.iterrows():
+            st.error(f"**{row['Event']}**\n\n{row['Location Name']}\n\nEnds {row['End Date'].strftime('%B %d, %Y')}")
+    else:
+        st.write("Owen is currently at the home office.")
 
-# Create a clean timeline summary layout
-for idx, row in sorted_df.iterrows():
-    col1, col2, col3 = st.columns([1, 2, 2])
-    with col1:
-        st.info(f"📆 {row['Start Date'].strftime('%b %d, %Y')}")
-    with col2:
-        st.markdown(f"**{row['Project Name']}** ({row['Region']})")
-    with col3:
-        st.markdown(f"Status: `{row['Status']}` | Lead: *{row['Lead']}*")
+with col_up:
+    st.subheader("🔮 Coming Up")
+    upcoming_trips = df[df['Timeline Status'] == 'Upcoming'].sort_values('Start Date')
+    if not upcoming_trips.empty:
+        for _, row in upcoming_trips.iterrows():
+            st.markdown(f"**{row['Start Date'].strftime('%b %d')}**: {row['Event']} ({row['Location Name']})")
+    else:
+        st.write("No upcoming travel scheduled.")
 
-# 4. RAW DATA VIEW (Clickable Ledger)
+with col_past:
+    st.subheader("📜 Past Engagements")
+    past_trips = df[df['Timeline Status'] == 'Past'].sort_values('Start Date', ascending=False)
+    if not past_trips.empty:
+        for _, row in past_trips.iterrows():
+            st.markdown(f"*{row['Start Date'].strftime('%b %Y')}* — {row['Event']}")
+    else:
+        st.write("No historical entries logged.")
+
+# 6. LEDGER DATA REGISTRY
 st.markdown("---")
-st.subheader("🗂️ Project Registry Ledger")
-st.write("Click any column header to sort, or hover over cells to expand details.")
-st.dataframe(df, use_container_width=True)
+st.subheader("Full Schedule Registry")
+st.dataframe(df, use_container_width=True, hide_index=True)
