@@ -1,151 +1,77 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import folium
+from streamlit_folium import st_folium
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Set page to wide mode to give the map breathing room
+st.set_page_config(layout="wide", page_title="Global Project Dashboard")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+st.title("🗺️ Team Activity Tracker (Prototype)")
+st.caption("A test playground using mock data to track global events.")
 
+# 1. GENERATE FAKE DATA FOR TESTING
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def get_mock_data():
+    return pd.DataFrame({
+        'Project Name': ['Project Alpha (Tech Hub)', 'APAC Expansion Kickoff', 'EMEA Logistics Sync', 'LATAM Field Trials'],
+        'Region': ['North America', 'APAC', 'Europe', 'South America'],
+        'Latitude': [37.7749, 1.3521, 48.8566, -23.5505],
+        'Longitude': [-122.4194, 103.8198, 2.3522, -46.6333],
+        'Status': ['Active', 'New', 'Active', 'Pending'],
+        'Start Date': ['2026-08-01', '2026-09-15', '2026-07-20', '2026-11-05'],
+        'Lead': ['Sarah Jenkins', 'Alex Wong', 'Elena Rostova', 'Carlos Silva']
+    })
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
+df = get_mock_data()
+
+# 2. RENDER THE INTERACTIVE MAP
+st.subheader("Active Regional Events")
+
+# Initialize map centered on the ocean/equator
+m = folium.Map(location=[15, 0], zoom_start=2, tiles="CartoDB positron")
+
+# Color mapping helper for pins
+status_colors = {'Active': 'green', 'New': 'blue', 'Pending': 'orange'}
+
+# Drop the markers onto the map
+for idx, row in df.iterrows():
+    popup_text = f"""
+    <div style='width: 200px;'>
+        <h4>{row['Project Name']}</h4>
+        <b>Status:</b> {row['Status']}<br>
+        <b>Start Date:</b> {row['Start Date']}<br>
+        <b>Team Lead:</b> {row['Lead']}
+    </div>
     """
+    folium.Marker(
+        [row['Latitude'], row['Longitude']],
+        popup=popup_text,
+        icon=folium.Icon(color=status_colors.get(row['Status'], 'gray'), icon='info-sign')
+    ).add_to(m)
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# Display map in dashboard
+st_folium(m, width="100%", height=450)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+# 3. INTERACTIVE CALENDAR TIMELINE VIEW
+st.markdown("---")
+st.subheader("📅 Schedule Overviews")
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+# Convert strings to datetime for timeline manipulation
+df['Start Date'] = pd.to_datetime(df['Start Date'])
+sorted_df = df.sort_values(by='Start Date')
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# Create a clean timeline summary layout
+for idx, row in sorted_df.iterrows():
+    col1, col2, col3 = st.columns([1, 2, 2])
+    with col1:
+        st.info(f"📆 {row['Start Date'].strftime('%b %d, %Y')}")
+    with col2:
+        st.markdown(f"**{row['Project Name']}** ({row['Region']})")
+    with col3:
+        st.markdown(f"Status: `{row['Status']}` | Lead: *{row['Lead']}*")
 
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+# 4. RAW DATA VIEW (Clickable Ledger)
+st.markdown("---")
+st.subheader("🗂️ Project Registry Ledger")
+st.write("Click any column header to sort, or hover over cells to expand details.")
+st.dataframe(df, use_container_width=True)
